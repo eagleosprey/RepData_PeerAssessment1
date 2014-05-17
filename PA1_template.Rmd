@@ -1,20 +1,178 @@
-# Reproducible Research: Peer Assessment 1
+# Reproducible Research - Peer Assessment 1
 
+## Load needed libraries
+```{r}
+library(ggplot2)
+```
 
-## Loading and preprocessing the data
+## Load and preprocess the data
+0) The data file should be manually extracted from the zip file. 
 
+1) Then, load / read the data.
+```{r readData, echo=TRUE}
+df<-read.csv("activity.csv", 
+        header = TRUE,
+        colClasses = c("numeric", "Date", "integer"),
+        nrows = 17700)
+```
 
+2) Check that data is in useable format for analysis and tidy.
+```{r checkFile, echo=TRUE}
+str(df)
+summary(df)
+head(df)
+tail(df)
+```
 
 ## What is mean total number of steps taken per day?
+Sum steps by days. Ignore missing/NA values. This is assumed to be the mean of the total number of steps for each day.
+```{r SumStepsByDay}
+stepsbyDate <- aggregate(x = df$steps, 
+          by = list("date" = df$date), 
+          na.rm = TRUE,
+          FUN = sum, 
+          simplify = TRUE)
 
+names(stepsbyDate)[2] <- "steps"   #rename x from aggregate() to steps
 
+head(stepsbyDate)
+```
+
+1) Create a histogram of total number of steps taken each day.  
+```{r TotalStepsByDay}
+qplot(steps, data=stepsbyDate, binwidth = 1000)
+```
+
+2) Calculate the mean and median.
+```{r}
+meanSteps <- mean(na.omit(stepsbyDate$steps))
+medSteps <- median(na.omit(stepsbyDate$steps))
+```
+Mean of steps taken per day:  `r format(meanSteps, nsmall = 1)`  
+Median of steps taken per day: `r format(medSteps, nsmall = 1)`
 
 ## What is the average daily activity pattern?
+Average the steps for all days in the original data set by the 5-minute intervals
 
+```{r}
+stepsbyInterval <- aggregate(x = df$steps, 
+          by = list("interval" = df$interval), 
+          na.rm = TRUE,
+          FUN = mean, 
+          simplify = TRUE)
 
+names(stepsbyInterval)[2] <- "steps"   #rename x from aggregate() to steps
+str(stepsbyInterval)
+head(stepsbyInterval)
+```
+
+1) Create a time series plot of average-number-of-steps-for-all-days per interval.  Because the x-asis is continous and the time interval data ranges from XX:00 to XX:55, there is a 45 minute gap in each hour from 00:00 to 23:55. This approach is consistent with the project example.
+```{r AverageDailyPattern}
+qplot(interval, steps, data=stepsbyInterval, geom="line")
+```
+
+2) Identify the 5-minute interval with the maximum average-number-of-steps-for-all-days
+```{r}
+maxInterval <- stepsbyInterval[which.max(stepsbyInterval[,2]),]
+```
+
+The interval with the maximum, on average, number of steps is `r format(maxInterval[1], nsmall = 0)`.
 
 ## Imputing missing values
+1) Identify the total number of missing values.
+```{r}
+nacount <- sum(is.na(df$steps))
+```
+The total number of rows with NAs is `r format(nacount, nsmall = 0)`
 
+2) Create a method to fill in the missing values of steps. Will use the average-for-all-days of the 5-minute interval.
+```{r}
+# Use a logical vector to identify which rows in $steps contain NA
+nasteps <- is.na(df$steps)
+# create a vector of length(nasteps) that contains the  interval average by repeating the interval average vector by the number of days in the dataset
+intavgsteps <- rep(stepsbyInterval$steps, length(stepsbyDate$steps))
+```
+
+3) Create new dataset equal to original but with NAs replaced by average-for-all-days of the 5-minute interval.
+```{r}
+#replace NA's in df$steps with interval averages
+newdf <- df
+newdf$steps[nasteps] <- intavgsteps[nasteps]
+head(newdf)        
+```
+
+4a) Create a histogram of the total steps taken each day using the new dataset (i.e., NAs replaced by averages). 
+```{r TotalStepsReplacedNAs}
+newstepsbyDate <- aggregate(x = newdf$steps, 
+          by = list("date" = newdf$date), 
+          na.rm = TRUE,
+          FUN = sum, 
+          simplify = TRUE)
+
+names(newstepsbyDate)[2] <- "steps"   #rename x from aggregate() to steps
+str(newstepsbyDate)
+```
+
+```{r}
+qplot(steps, data=newstepsbyDate, binwidth = 1000)
+```
+
+4b) Report the mean and median of steps taken per day.
+```{r}
+newmeanSteps <- mean(na.omit(newstepsbyDate$steps))
+newmedSteps <- median(na.omit(newstepsbyDate$steps))
+```
+Mean of steps taken per day (new):  `r format(newmeanSteps, nsmall = 1)`  
+Median of steps taken per day (new): `r format(newmedSteps, nsmall = 1)`
+
+4c) Do the mean and median of steps, with the NAs replaced, differ from the original data set?
+
+Subtracting the new mean and median from the original calculations gives the following differences:  
+Mean difference: `r format(newmeanSteps - meanSteps, nsmall = 1)`  
+Median difference: `r format(newmedSteps - medSteps, nsmall = 1)`
+
+4d) The impact of replacing NAs with estimates is that the mean and median increase.
 
 
 ## Are there differences in activity patterns between weekdays and weekends?
+
+1) Using the new data set (no NAs), create a factor variable with two values - a) weekday, b) weekend.
+
+```{r}
+newdf$weekday <- weekdays(newdf$date, abbreviate = TRUE)
+
+newdf$dayend <-as.factor(ifelse (newdf$weekday %in% c("Sat","Sun"), "weekend","weekday"))
+head(newdf)
+tail(newdf)
+newdf[2000:2005,]
+```
+
+2) Make a panel time-series plot averaged across all weekday and weekend days. 
+
+Aggregate the new data-set by interval and dayend.
+```{r}
+newstepsbyInterval <- aggregate(x = newdf$steps, 
+          by = list("dayend" = newdf$dayend,
+                    "interval" = newdf$interval),
+          na.rm = TRUE,
+          FUN = mean, 
+          simplify = TRUE)
+
+names(newstepsbyInterval)[3] <- "steps"   #rename x from aggregate() to steps
+```
+
+Create a time series plot of average-number-of-steps-for-all-days per interval. Use ggplot2/ggplot.
+
+```{r AverageStepsbyWeekendWeekday}
+g <- ggplot(newstepsbyInterval, aes(interval, steps))
+# ggplot2 facet strip on right
+g + geom_line(color="blue") + 
+        facet_grid(dayend ~ .) + 
+        xlab("Interval") + 
+        ylab("Number of Steps") + 
+        theme_bw() + 
+        theme(strip.background = element_rect(fill = 'beige'), 
+              panel.grid.major = element_blank(), 
+              panel.grid.minor = element_blank() )
+```
+
